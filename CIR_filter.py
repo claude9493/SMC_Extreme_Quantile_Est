@@ -4,23 +4,23 @@ import datetime
 import itertools
 import os
 import time
+from functools import partial
+from multiprocessing import Process, Queue
+from multiprocessing.pool import Pool
 
 import matplotlib.pyplot as plt
 import numpy as np
 import particles
 import seaborn as sns
 import statsmodels.api as sm
-from sklearn.metrics import mean_squared_error
 from matplotlib.collections import PolyCollection
 from mpl_toolkits.mplot3d import Axes3D
 from particles import state_space_models as ssm
-from multiprocessing.pool import Pool
-from multiprocessing import Process, Queue
-from functools import partial
+from sklearn.metrics import mean_squared_error
 
 import evaluate
 import filtering
-from model.CIR import (CIR, CIR_mod, CIR_plot)
+from model.CIR import CIR, CIR_mod, CIR_plot
 
 # %% Settings parameters
 N = 100  # 5000
@@ -53,31 +53,52 @@ CIR_plot(real_x)
 plt.savefig(f"./Records/CIR{name}/real_states.png")
 
 #%% Function for repeated filtering simulation
-default_args = {"N":100, "ESSrmin":1, "resampling":"multinomial", "store_history":True, "compute_moments":False, "online_smoothing":None, "verbose":False}
+default_args = {
+    "N": 100,
+    "ESSrmin": 1,
+    "resampling": "multinomial",
+    "store_history": True,
+    "compute_moments": False,
+    "online_smoothing": None,
+    "verbose": False,
+}
 
-def simulate_single(fk, alg_args=default_args, queue):
+
+def simulate_single(fk, alg_args=default_args):
     t0 = time.time()
     alg = particles.SMC(fk=fk, **alg_args)
     alg.run()
-    t1 = time.time()   
-    state_est = list(map(lambda i: np.average(alg.hist.X[i], weights=alg.hist.wgts[i].W), range(T)))
-    queue.put((state_est, t1-t0))
+    t1 = time.time()
+    state_est = list(
+        map(lambda i: np.average(alg.hist.X[i], weights=alg.hist.wgts[i].W), range(T))
+    )
+    queue.put((state_est, t1 - t0))
     # return state_est, t1-t0
 
-def repeated_simulation(fk, R=R, alg_args = default_args):
+
+def repeated_simulation(fk, R=R, alg_args=default_args):
     num_cores = multiprocessing.cpu_count()
     f = partial(simulate_single, fk, alg_args)
     res = Parallel(n_jobs=num_cores)(delayed(f)(i) for i in range(R))
 
-    state_ests = res[:,0]
-    running_time = res[:,1]
+    state_ests = res[:, 0]
+    running_time = res[:, 1]
 
     average_state_est = np.mean(state_ests, axis=0)
     return average_state_est, np.mean(running_time)
 
 
 #%% Particle filter SMC_10K
-alg_PF = particles.SMC(fk=fk_PF, N=10000, ESSrmin=1, resampling='multinomial', store_history=True, compute_moments=False, online_smoothing=None, verbose=False)
+alg_PF = particles.SMC(
+    fk=fk_PF,
+    N=10000,
+    ESSrmin=1,
+    resampling="multinomial",
+    store_history=True,
+    compute_moments=False,
+    online_smoothing=None,
+    verbose=False,
+)
 
 filtering.state_est(alg_PF, real_x, name="(CIR, SMC_10K)", xmin=-2, xmax=10)
 plt.savefig(f"./Records/CIR{name}/SMC_10K_filtering_once.png")
@@ -91,14 +112,25 @@ plt.savefig(f"./Records/CIR{name}/SMC_10K_residuals_once.png")
 
 #%% SMC_10K 50 repeats
 # Ran in a single python file to avoid the inconsissence of Jupyter and multiprocessing
-evaluate.running_result_evaluate(f"./Records/CIR{name}/running_result_10K_R50.npz", real_x, "SMC_10K")
+evaluate.running_result_evaluate(
+    f"./Records/CIR{name}/running_result_10K_R50.npz", real_x, "SMC_10K"
+)
 
 
 #%% Particle filter SMC_100 (Truncated Normal proposal)
 ## %%timeit
 # SMC_100, 100 particles each step
 # 13.2 s ± 1.2 s per loop (mean ± std. dev. of 7 runs, 1 loop each) for N = 1000
-alg_PF = particles.SMC(fk=fk_PF, N=N, ESSrmin=1, resampling='multinomial', store_history=True, compute_moments=False, online_smoothing=None, verbose=False)
+alg_PF = particles.SMC(
+    fk=fk_PF,
+    N=N,
+    ESSrmin=1,
+    resampling="multinomial",
+    store_history=True,
+    compute_moments=False,
+    online_smoothing=None,
+    verbose=False,
+)
 filtering.state_est(alg_PF, real_x, name="(CIR, SMC_100)", xmin=-2, xmax=10)
 plt.savefig(f"./Records/CIR{name}/SMC_100_filtering_once.png")
 
@@ -107,13 +139,20 @@ plt.savefig(f"./Records/CIR{name}/SMC_100_residuals_once.png")
 
 #%% SMC_100 repeated
 # average_state_est, average_running_time = repeated_simulation(fk_PF, R=50)
-evaluate.running_result_evaluate(f"./Records/CIR{name}/running_result_SMC100_R100.npz", real_x, "SMC_100")
+evaluate.running_result_evaluate(
+    f"./Records/CIR{name}/running_result_SMC100_R100.npz", real_x, "SMC_100"
+)
 plt.savefig(f"./Records/CIR{name}/SMC_100_average_est_{50}.png")
 
 # %% Tail probability
-all_particles = np.asarray(alg_PF.hist.X).reshape((100*100,1))
+all_particles = np.asarray(alg_PF.hist.X).reshape((100 * 100, 1))
 sns.distplot(all_particles)
 
 
 #%% Modified SMC_100 R=100
-evaluate.running_result_evaluate(f"./Records/CIR{name}/running_result_ModifiedSMC100_R100.npz", real_x, "ModifiedSMC_100")
+evaluate.running_result_evaluate(
+    f"./Records/CIR{name}/running_result_ModifiedSMC100_R100.npz",
+    real_x,
+    "ModifiedSMC_100",
+)
+

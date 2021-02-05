@@ -1,26 +1,21 @@
 #%%
 import datetime
 import itertools
+import multiprocessing
 import os
 import time
+from functools import partial
+from multiprocessing.pool import Pool
 
 import matplotlib.pyplot as plt
 import numpy as np
 import particles
 import seaborn as sns
-import statsmodels.api as sm
-from sklearn.metrics import mean_squared_error
-from matplotlib.collections import PolyCollection
-from mpl_toolkits.mplot3d import Axes3D
-from particles import state_space_models as ssm
-import multiprocessing
 from joblib import Parallel, delayed
-from multiprocessing.pool import Pool
-from multiprocessing import Process, Queue
-from functools import partial
+from particles import state_space_models as ssm
+from sklearn.metrics import mean_squared_error
 
 import evaluate
-# import filtering
 from model.CIR import CIR, CIR_mod, CIR_plot
 
 # %% Settings parameters
@@ -42,25 +37,40 @@ CIR_plot(real_x)
 
 
 #%% Function for repeated filtering simulation
-default_args = {"N":100, "ESSrmin":1, "resampling":"multinomial", "store_history":True, "compute_moments":False, "online_smoothing":None, "verbose":False}
+default_args = {
+    "N": 100,
+    "ESSrmin": 1,
+    "resampling": "multinomial",
+    "store_history": True,
+    "compute_moments": False,
+    "online_smoothing": None,
+    "verbose": False,
+}
+
 
 def simulate_single(fk, alg_args, n=0):
     # print(f"#{os.getpid()} process start running.")
     t0 = time.time()
     alg = particles.SMC(fk=fk, **alg_args)
     alg.run()
-    t1 = time.time()   
-    state_est = list(map(lambda i: np.average(alg.hist.X[i], weights=alg.hist.wgts[i].W), range(T)))
+    t1 = time.time()
+    state_est = list(
+        map(lambda i: np.average(alg.hist.X[i], weights=alg.hist.wgts[i].W), range(T))
+    )
     print(f"#{os.getpid()} process finished, time costed: {t1-t0}")
-    return state_est, t1-t0
+    return state_est, t1 - t0
 
-def repeated_simulation(fk, R=R, alg_args = default_args):
+
+def repeated_simulation(fk, R=R, alg_args=default_args):
     # faster!
     num_cores = multiprocessing.cpu_count()
     f = partial(simulate_single, fk, alg_args)
     res = Parallel(n_jobs=num_cores)(delayed(f)(i) for i in range(R))
     return res
 
+
+# An early version for multiprocessing simulation, using Pool.map() function in multiprocessing class
+#
 # def repeated_simulation_v2(fk, R=R, alg_args=default_args):
 #     num_cores = multiprocessing.cpu_count()
 #     p = Pool(processes=num_cores)
@@ -68,6 +78,7 @@ def repeated_simulation(fk, R=R, alg_args = default_args):
 #     res = p.map(f, range(R))
 
 #     return res
+
 
 # %%
 # The joblib version is faster for large number of repeats
@@ -78,13 +89,20 @@ if __name__ == "__main__":
     res = res = repeated_simulation(fk_MPF, R=100)
     t1 = time.time()
     print(f"Joblib version time costed: {t1-t0}")
-    np.savez(file=f"./Records/CIR{name}/running_result_ModifiedSMC100_R100", res = np.array(res))
+    np.savez(
+        file=f"./Records/CIR{name}/running_result_ModifiedSMC100_R100",
+        res=np.array(res),
+    )
 
-    evaluate.running_result_evaluate(f"./Records/CIR{name}/running_result_ModifiedSMC100_R100.npz", real_x, "ModifiedSMC_100")
+    evaluate.running_result_evaluate(
+        f"./Records/CIR{name}/running_result_ModifiedSMC100_R100.npz",
+        real_x,
+        "ModifiedSMC_100",
+    )
 
-    #20runs, 69.49423217773438 seconds
-    #50runs, 65.9800705909729 seconds
-    #50runs, SMC_10K, 2799.397787332535
+    # 20runs, 69.49423217773438 seconds
+    # 50runs, 65.9800705909729 seconds
+    # 50runs, SMC_10K, 2799.397787332535
 
     # For loop version
     # t0 = time.time()
@@ -93,12 +111,12 @@ if __name__ == "__main__":
     # t1 = time.time()
     # print(f"For loop time costed: {t1-t0}")
     # 5 repeated run, 13.2 seconds
-    #20runs, 55.76940393447876 seconds
-    #50runs, 82.20281267166138 seconds
+    # 20runs, 55.76940393447876 seconds
+    # 50runs, 82.20281267166138 seconds
 
     # t0 = time.time()
     # res = repeated_simulation_v2(fk_PF, R=20)
     # t1 = time.time()
     # print(f"Multiprocessing time costed: {t1-t0}")
-    #10 runs, 41.604153871536255 seconds
-    #20 runs, 72.22063732147217
+    # 10 runs, 41.604153871536255 seconds
+    # 20 runs, 72.22063732147217
