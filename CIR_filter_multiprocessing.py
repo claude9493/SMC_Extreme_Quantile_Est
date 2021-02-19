@@ -1,4 +1,4 @@
-#%%
+#%% Load packages
 import datetime
 import itertools
 import multiprocessing
@@ -16,7 +16,7 @@ from particles import state_space_models as ssm
 from sklearn.metrics import mean_squared_error
 
 import evaluate
-from model.CIR import CIR, CIR_mod, CIR_plot
+from model.CIR import CIR, CIR_mod, CIR_t, CIR_plot
 
 # %% Settings parameters
 N = 100  # 5000
@@ -26,15 +26,6 @@ my_seed = 3035802483
 # Use same random seeds in R independent replications
 MAX_INT_32 = np.iinfo(np.int32).max
 seeds = [np.random.randint(MAX_INT_32) for i in range(R)]
-
-#%% Load data from saved npz file
-name = "20210204-225727"
-temp = np.load(file=f"./Records/CIR{name}/data.npz")
-real_x, real_y = temp.get("real_x"), temp.get("real_y")
-fk_PF = ssm.GuidedPF(ssm=CIR(), data=real_y)
-fk_MPF = ssm.GuidedPF(ssm=CIR_mod(s=50), data=real_y)
-CIR_plot(real_x)
-
 
 #%% Function for repeated filtering simulation
 default_args = {
@@ -80,43 +71,50 @@ def repeated_simulation(fk, R=R, alg_args=default_args):
 #     return res
 
 
-# %%
+# %% Run the multiprocessing simulation task
 # The joblib version is faster for large number of repeats
 if __name__ == "__main__":
+    # Load data from saved npz file and initilize fk models
+    name = "20210204-225727"
+
+    loader = np.load(file=f"./Records/CIR{name}/data.npz")
+    real_x, real_y = loader.get("real_x"), loader.get("real_y")
+    CIR_plot(real_x)
+
+    fk_boot = ssm.Bootstrap(ssm=CIR(), data=real_y)
+    fk_PF = ssm.GuidedPF(ssm=CIR(), data=real_y)
+    fk_MPF = ssm.GuidedPF(ssm=CIR_mod(s=50), data=real_y)
+    fk_PF_t = ssm.GuidedPF(ssm=CIR_t(), data=real_y)
+
+    # Start expirment ===================================================
+    alg_name = "Bootstrap100_R500"
+    R = 500
+
     t0 = time.time()
-    # SMC_10K
-    # res = repeated_simulation(fk_PF, R=50, alg_args=dict(default_args, N=10000))
-    res = res = repeated_simulation(fk_MPF, R=100)
+    # res = repeated_simulation(fk_PF, R=50, alg_args=dict(default_args, N=10000))  # SMC_10K
+    res = repeated_simulation(fk_boot, R=R)
     t1 = time.time()
-    print(f"Joblib version time costed: {t1-t0}")
+
+    file = f"./Records/CIR{name}/{alg_name}/history.npz"
+    metadata = {
+        "alg_name"      : alg_name,
+        "num_rep"       : R,
+        "timestamp"     : str(datetime.datetime.now()),
+        "file_path"     : file
+    }
+    # Save the result
     np.savez(
-        file=f"./Records/CIR{name}/running_result_ModifiedSMC100_R100",
-        res=np.array(res),
+        file = file,
+        res = np.array(res),
+        meta = metadata
     )
+    print(f"[Finish] Total time costed: {t1-t0}\nHistory saved at {file}")
 
-    evaluate.running_result_evaluate(
-        f"./Records/CIR{name}/running_result_ModifiedSMC100_R100.npz",
+    # Evaluate the estimating result
+    evaluate.result_evaluate(
+        file,
         real_x,
-        "ModifiedSMC_100",
+        alg_name,
     )
-
-    # 20runs, 69.49423217773438 seconds
-    # 50runs, 65.9800705909729 seconds
-    # 50runs, SMC_10K, 2799.397787332535
-
-    # For loop version
-    # t0 = time.time()
-    # for i in range(50):
-    #     _, _ = simulate_single(fk_PF, default_args)
-    # t1 = time.time()
-    # print(f"For loop time costed: {t1-t0}")
-    # 5 repeated run, 13.2 seconds
-    # 20runs, 55.76940393447876 seconds
-    # 50runs, 82.20281267166138 seconds
-
-    # t0 = time.time()
-    # res = repeated_simulation_v2(fk_PF, R=20)
-    # t1 = time.time()
-    # print(f"Multiprocessing time costed: {t1-t0}")
-    # 10 runs, 41.604153871536255 seconds
-    # 20 runs, 72.22063732147217
+    evaluate.tail_prob(file)
+    plt.show()
