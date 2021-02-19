@@ -82,14 +82,21 @@ def state_est(alg, real_x, name = "", **kwargs):
     poly.set_edgecolor((0,0,0,1))
     ax.add_collection3d(poly, zs=ts, zdir='y')
     ax.scatter([real_x[i] for i in ts], ts, hrx)
-        
-    ax.set_xlabel('State')
-    ax.set_xlim3d(xmin, xmax)
-    ax.set_ylabel('Time index')
-    ax.set_ylim3d(max(ts)+1,min(ts)-1)
-    ax.set_zlabel('Density')
-    ax.set_zlim3d(0, 0.6)
-    ax.set_title(f"Waterfall representation of filtering distributions {name}")
+    ax.set(title = f"Waterfall representation of filtering distributions {name}",
+        xlabel = "State",
+        ylabel = "Time index",
+        zlabel = "Density",
+        xlim3d = (xmin, xmax),
+        ylim3d = (max(ts)+1,min(ts)-1),
+        zlim3d = (0, 0.6),
+    )    
+    # ax.set_xlabel('State')
+    # ax.set_xlim3d(xmin, xmax)
+    # ax.set_ylabel('Time index')
+    # ax.set_ylim3d(max(ts)+1,min(ts)-1)
+    # ax.set_zlabel('Density')
+    # ax.set_zlim3d(0, 0.6)
+    # ax.set_title(f"Waterfall representation of filtering distributions {name}")
 
     ax.view_init(30, 60)
 
