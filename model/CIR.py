@@ -20,38 +20,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
 
-#%% Noncentral chi square
-class ncx2(dists.ProbDist):
-    """
-    Reference:
-    Document of ncx2 in SciPy:
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ncx2.html
-    
-    WikiPedia page of Noncentral chi-squared distribution:
-    https://en.wikipedia.org/wiki/Noncentral_chi-squared_distribution
-    """
-
-    def __init__(self, k=1., l=1., scale=1):
-        self.k = k
-        self.l = l
-        self.scale = scale
-
-    def rvs(self, size=None):
-        return stats.ncx2.rvs(df=self.k, nc=self.l, size=size) / self.scale
-
-    def logpdf(self, x):
-        return stats.ncx2.logpdf(x*self.scale, self.k, self.l)
-
-    def ppf(self, x):
-        return stats.ncx2.ppf(x*self.scale, self.k, self.l)
-
+from distributions import (ncx2, t, t_nn)
 #%% CIR class
 class CIR(ssm.StateSpaceModel):
     """
+    Class for CIR model.
+
     Here we assume that all observed interest rates $y_t$ have same time to maturities $\tau$. For details of model and parameters, please refer to S2W3 report or Rossi(2010).
     
     Reference:
-    De Rossi, G. (2010). Maximum likelihood estimation of the Cox–Ingersoll–Ross model using particle filters.Computational Economics, 36(1), 1-16.
+        De Rossi, G. (2010). Maximum likelihood estimation of the Cox–Ingersoll–Ross model using particle filters.Computational Economics, 36(1), 1-16.
     """
     default_params = {
         'kappa':0.169, 
@@ -61,11 +39,11 @@ class CIR(ssm.StateSpaceModel):
     }
 
 
-    def __init__(self):
+    def __init__(self, Delta=1/12, H=1):
         super().__init__()
         tau = 1
-        self.Delta = 1/12
-        self.H = 1
+        self.Delta = Delta
+        self.H = H
         gamma = np.sqrt((self.kappa+self.lam)**2 + 2*self.sigma**2)
         Btau = 1/tau * (2*(np.exp(gamma*tau)-1)) / (2*gamma+(self.kappa+self.lam+gamma)*(np.exp(gamma*tau)-1))
         Atau = (2*self.kappa*self.theta/self.sigma**2 + 1) / tau * np.log((2*gamma*np.exp(tau*(self.kappa+self.lam+gamma)/2)) / (2*gamma+(self.kappa+self.lam+gamma)*(np.exp(gamma*tau)-1)))
@@ -98,7 +76,32 @@ class CIR(ssm.StateSpaceModel):
         c = (data[t] - self.Atau)**2 / (2*self.H)
         return dists.TruncNormal(mu = -b/(2*a), sigma = 1/(2*a), a=0., b=np.inf)
 
+
+class CIR_t(CIR):
+    """
+    Class for CIR model with (generalized) t distribution as proposal density.
+
+    TO-DO:
+    1. truncated t-distribution
+    2. multi-proposal CIR
+    """
+
+    def proposal0(self, data):
+        return t(df=1, loc=0, scale=1)
+
+    def proposal(self, t, xp, data):
+        a = self.Btau**2/(2*self.H)
+        b = -(data[t] - self.Atau)*self.Btau / self.H
+        c = (data[t] - self.Atau)**2 / (2*self.H)
+        return t_nn(df=1, loc=-b/(2*a), scale = 1/(2*a))
+
 class CIR_mod(CIR):
+    """
+    Class for modified CIR model.
+
+    Reference:
+        Neslihanoglu, S., & Date, P. (2019). A modified sequential Monte Carlo procedure for the efficient recursive estimation of extreme quantiles. Journal of Forecasting, 38(5), 390-399.
+    """
     def __init__(self, s=5):
         super().__init__()
         self.s = s
@@ -110,6 +113,13 @@ class CIR_mod(CIR):
 
 
 def CIR_plot(real_x):
+    """
+    Plot the real states time series and the distribution.
+
+    Args:
+        real_x (numpy array): real states
+    """
+
     T = len(real_x)
     fig, ax = plt.subplots(ncols=2, sharey=True, gridspec_kw={"width_ratios" : [1, 8], "wspace" : 0}, figsize=(9, 6))
     ax[1].plot(np.linspace(0,T, T), real_x)
