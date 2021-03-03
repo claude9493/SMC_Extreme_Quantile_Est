@@ -21,12 +21,25 @@ import seaborn as sns
 import itertools
 
 from distributions import (ncx2, t, t_nn)
+
 #%% CIR class
 class CIR(ssm.StateSpaceModel):
     """
     Class for CIR model.
 
-    Here we assume that all observed interest rates $y_t$ have same time to maturities $\tau$. For details of model and parameters, please refer to S2W3 report or Rossi(2010).
+    [PARAMETERS]:
+    kappa          : mean reversion parameter
+    theta          : long term mean the interest rate reverts to
+    sigma          : volatility parameter
+    lam (lambda)   : risk premium parameter
+    tau            : maturity associated with the observed yields.
+    Delta          : time interval
+    H              : diagnol of the diagnoal variance–covariance matrix errors in observed equation for yields
+
+    ~~Here we assume that all observed interest rates $y_t$ have same time to maturities $\tau$. For details of model and parameters, please refer to S2W3 report or Rossi(2010).~~
+
+    UPDATE 20210224:
+        Now let's try to introduce multivariate observed yields with different maturities $\tau$ and variance $H_{ii}$.
     
     Reference:
         De Rossi, G. (2010). Maximum likelihood estimation of the Cox–Ingersoll–Ross model using particle filters.Computational Economics, 36(1), 1-16.
@@ -39,14 +52,35 @@ class CIR(ssm.StateSpaceModel):
     }
 
 
-    def __init__(self, Delta=1/12, H=1):
+    def __init__(self, Delta=1/12, tau=1, H=1):
+        
+        if isinstance(tau, (np.ndarray, list)):
+            tau = np.array(tau)
+            self.num_yields = len(tau)
+            # if isinstance(H, (np.ndarray, list)):
+            #     H = np.array(H)
+            #     # If H is a array as well, it should have same lenth with tau
+            #     assert len(H) == len(tau), "Length of tau (maturities) should comply with H (variances of yeilds)"
+            # else:
+            #     # Otherwise, we assume all yields rates have same variances
+            #     H = np.repeat(H, self.num_yields)
+        else:
+            # In case only one observed yields
+            # assert isinstance(H, (np.ndarray, list)) != True, "The input tau has length one, H should either."
+            self.num_yields = 1
+
         super().__init__()
-        tau = 1
+
         self.Delta = Delta
+        self.tau = tau
         self.H = H
+
         gamma = np.sqrt((self.kappa+self.lam)**2 + 2*self.sigma**2)
-        Btau = 1/tau * (2*(np.exp(gamma*tau)-1)) / (2*gamma+(self.kappa+self.lam+gamma)*(np.exp(gamma*tau)-1))
-        Atau = (2*self.kappa*self.theta/self.sigma**2 + 1) / tau * np.log((2*gamma*np.exp(tau*(self.kappa+self.lam+gamma)/2)) / (2*gamma+(self.kappa+self.lam+gamma)*(np.exp(gamma*tau)-1)))
+        
+        Btau = 1/self.tau * (2*(np.exp(gamma*self.tau)-1)) / (2*gamma+(self.kappa+self.lam+gamma)*(np.exp(gamma*self.tau)-1))
+
+        Atau = (2*self.kappa*self.theta/self.sigma**2 + 1) / self.tau * np.log((2*gamma*np.exp(self.tau*(self.kappa+self.lam+gamma)/2)) / (2*gamma+(self.kappa+self.lam+gamma)*(np.exp(gamma*self.tau)-1)))
+
         self.gamma, self.Atau, self.Btau = gamma, Atau, Btau
 
 
@@ -63,17 +97,33 @@ class CIR(ssm.StateSpaceModel):
         return ncx2(k=k, l=l, scale=2*c)
 
     def PY(self, t, xp, x):
-        mu = -self.Atau + self.Btau*x
-        sigma = self.H
-        return dists.Normal(mu, sigma)
+        # print(f"PY is called, shape of x {x}, {x.shape}")
+        if self.num_yields == 1:
+            mu = -self.Atau + self.Btau*x
+            scale = self.H
+            return dists.Normal(mu, scale)
+        else:
+            # In particles\core.py\SMC reweight_particles call the fk model's logG and therefore PY here is called by the Bootstrap filter. In this process, x is inputed as a list, containing all particles in one time step. So the normal broadcast mechanism doen not work as desire.
 
+            mu = [-self.Atau + self.Btau*xi for xi in x]
+            cov = np.eye(self.num_yields)*self.H
+            # cov = np.diag(np.asanyarray(self.H))
+            # cov = np.zeros((self.num_yields, self.num_yields))
+            # cov[:self.num_yields].flat[0::self.num_yields+1] = self.H
+            return dists.MvNormal(loc=mu, cov=cov)
+        
     def proposal0(self, data):
         return dists.Normal(0, 1)
     
     def proposal(self, t, xp, data):
-        a = self.Btau**2/(2*self.H)
-        b = -(data[t] - self.Atau)*self.Btau / self.H
-        c = (data[t] - self.Atau)**2 / (2*self.H)
+        if self.num_yields == 1:
+            a = self.Btau**2/(2*self.H)
+            b = -(data[t] - self.Atau)*self.Btau / self.H
+            # c = (data[t] - self.Atau)**2 / (2*self.H)
+        else:
+            a = sum(self.Btau**2)/(2*self.H)
+            b = -((data[t] - self.Atau)*self.Btau).sum() / self.H
+            # c = sum((data[t] - self.Atau)**2) / (2*self.H)
         return dists.TruncNormal(mu = -b/(2*a), sigma = 1/(2*a), a=0., b=np.inf)
 
 
@@ -90,9 +140,14 @@ class CIR_t(CIR):
         return t(df=1, loc=0, scale=1)
 
     def proposal(self, t, xp, data):
-        a = self.Btau**2/(2*self.H)
-        b = -(data[t] - self.Atau)*self.Btau / self.H
-        c = (data[t] - self.Atau)**2 / (2*self.H)
+        if self.num_yields == 1:
+            a = self.Btau**2/(2*self.H)
+            b = -(data[t] - self.Atau)*self.Btau / self.H
+            # c = (data[t] - self.Atau)**2 / (2*self.H)
+        else:
+            a = sum(self.Btau**2)/(2*self.H)
+            b = -((data[t] - self.Atau)*self.Btau).sum() / self.H
+            # c = sum((data[t] - self.Atau)**2) / (2*self.H) 
         return t_nn(df=1, loc=-b/(2*a), scale = 1/(2*a))
 
 class CIR_mod(CIR):
@@ -135,6 +190,8 @@ def CIR_plot(real_x):
     fig.text(0.5, 0.03, "time index", ha="center")
     ax[0].set_ylabel("interest rate")
     fig.text(0.5, 0.9, "True states and the density", ha="center")
+
+
 
 #%%
 if __name__ == "__main__":

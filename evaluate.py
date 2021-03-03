@@ -29,7 +29,7 @@ def resi_plot(alg, real_x, name=""):
         plt.title(f"Estimated state - Real state (MSE={mse:.3})")
     # plt.show()
 
-def average_state_est_plot(average_state_est, real_x, R, name=""):
+def average_state_est_plot(average_state_est, state_std, real_x, name=""):
     """
     Plot true states and average estimated states from a repeated running algorithm.
 
@@ -43,15 +43,18 @@ def average_state_est_plot(average_state_est, real_x, R, name=""):
     Neslihanoglu, S., & Date, P. (2019). A modified sequential Monte Carlo procedure for the efficient recursive estimation of extreme quantiles. Journal of Forecasting, 38(5), 390-399.
     """
     _, ax = plt.subplots(figsize = (8,6))
-    # plt.figure(figsize=(8,6))
+    T = len(real_x)
     plt.plot(real_x, color="C0", label="True State")
     plt.plot(average_state_est, linestyle="dashed", color="C0", label=f"{name} State Estimate")
-    ax.set(title = f"Average State Estimates from {name} Simulation {R} Repeats",
+
+    lower = average_state_est - state_std * 1.96
+    upper = average_state_est + state_std * 1.96
+    plt.fill_between(np.linspace(0, T, T), lower, upper, alpha=0.2)
+    
+    ax.set(title = f"Average State Estimates from {name} Simulation",
         xlabel = r"time index ($t$)",
         ylabel = r"Average state estimates ($\bar{\hat{x}}_t$)")
-    # plt.xlabel(r"time index ($t$)")
-    # plt.ylabel(r"Average state estimates ($\bar{\hat{x}}_t$)")
-    # plt.title(f"Average State Estimates from {name} Simulation {R} Repeats")
+
     plt.legend()
 
 def load_hist(file):
@@ -66,9 +69,9 @@ def load_hist(file):
         2. Running time
     """
     loader = np.load(file=file, allow_pickle=True)
-
-    meta = loader.get("meta")
-    print(f"[INFO] History loaded\nAlgorithm: {meta['alg_name']}\nCreated time: {meta['timestamp']}")
+    if loader.get("meta"):
+        meta = loader.get("meta").item()
+        print(f"[INFO] History loaded\nAlgorithm: {meta['alg_name']}\nCreated time: {meta['timestamp']}\n\n")
 
     res = loader.get("res")
     state_estimates, running_time = np.stack(res[:,0], axis=0), res[:,1]
@@ -84,13 +87,14 @@ def result_evaluate(file, real_x, name=""):
         name (str, optional): description of the algorithm. Defaults to "".
     """
     state_estimates, running_time = load_hist(file)
-    R = len(running_time)
+    # R = len(running_time)
     average_running_time = np.mean(running_time)
     average_state_est = np.mean(state_estimates, axis=0)
+    state_std = np.std(state_estimates, axis=0)
     print(f"The average running time is {average_running_time}\n\
 MSE: {mean_squared_error(average_state_est, list(itertools.chain.from_iterable(real_x)))}")
     
-    average_state_est_plot(average_state_est, real_x, R, name)
+    average_state_est_plot(average_state_est, state_std, real_x, name)
 
 def tail_prob(file, breaks = [7, 30]):
     """
@@ -155,7 +159,7 @@ def tail_prob_multi(files, real_x, breaks=[7,30]):
         quantiles_MSE.append(np.mean((quantiles - real_quantiles)**2, axis=1))
         state_est = temp.reshape((temp.size ,))
         particles.append(state_est)
-        labels.append(f.split('/')[-1][7:-4])
+        labels.append(f.split('/')[-2])
         
         xmin, xmax = min(xmin, min(state_est)), max(xmax, max(state_est))
     

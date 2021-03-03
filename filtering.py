@@ -100,7 +100,7 @@ def state_est(alg, real_x, name = "", **kwargs):
 
     ax.view_init(30, 60)
 
-
+'''
 #%% Bootstrap filter
 fk_boot = ssm.Bootstrap(ssm=AR1(), data=real_y)
 alg_boot = particles.SMC(fk=fk_boot, N=N, resampling="multinomial", summaries=True)
@@ -122,3 +122,4 @@ print(fk_APF.isAPF)
 state_est(alg_APF, real_x, "(Auxiliary particle filter)")
 
 # %% independent particle filter
+'''

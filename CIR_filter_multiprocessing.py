@@ -52,13 +52,36 @@ def simulate_single(fk, alg_args, n=0):
     return state_est, t1 - t0
 
 
-def repeated_simulation(fk, R=R, alg_args=default_args):
+def repeated_simulation(fk, R=R, nprocs=0, alg_args=default_args):
     # faster!
-    num_cores = multiprocessing.cpu_count()
+    if nprocs == 0:
+        num_cores = multiprocessing.cpu_count()
+    else:
+        num_cores = min(multiprocessing.cpu_count(), abs(nprocs))
     f = partial(simulate_single, fk, alg_args)
     res = Parallel(n_jobs=num_cores)(delayed(f)(i) for i in range(R))
     return res
 
+def multiSMC(fk_list, N=100, nruns=10, nprocs=0):
+    for fk in fk_list.keys():
+        t0 = time.time()
+        res = repeated_simulation(fk_list.get(fk), nruns, nprocs)
+        t1 = time.time()
+        os.mkdir(f"./Records/CIR{name}/{fk}")
+        file = f"./Records/CIR{name}/{fk}/history.npz"
+        metadata = {
+            "alg_name"      : fk,
+            "num_rep"       : nruns,
+            "timestamp"     : str(datetime.datetime.now()),
+            "file_path"     : file
+        }
+        # Save the result
+        np.savez(
+            file = file,
+            res = np.array(res),
+            meta = metadata
+        )
+        print(f"[Finish] Total time costed: {t1-t0}\nHistory saved at {file}")
 
 # An early version for multiprocessing simulation, using Pool.map() function in multiprocessing class
 #
@@ -75,12 +98,34 @@ def repeated_simulation(fk, R=R, alg_args=default_args):
 # The joblib version is faster for large number of repeats
 if __name__ == "__main__":
     # Load data from saved npz file and initilize fk models
-    name = "20210204-225727"
+    name = "20210225-111533"
 
     loader = np.load(file=f"./Records/CIR{name}/data.npz")
-    real_x, real_y = loader.get("real_x"), loader.get("real_y")
+    real_x, real_y, real_y2 = loader.get("real_x"), loader.get("real_y"), loader.get("real_y2")
     CIR_plot(real_x)
+    
+    # For the univariate case simulation
+    # fk_list = {
+    #     "fk_boot" : ssm.Bootstrap(ssm=CIR(), data=real_y),
+    #     "fk_PF" : ssm.GuidedPF(ssm=CIR(), data=real_y),
+    #     "fk_MPF" : ssm.GuidedPF(ssm=CIR_mod(s=50), data=real_y),
+    #     "fk_PF_t" : ssm.GuidedPF(ssm=CIR_t(), data=real_y)
+    # }
 
+    # For the multivariate case simulation
+    tau = np.array([0.25, 0.5, 1, 3, 5, 10])
+    fk_list = {
+        "bootstrap_H10": ssm.Bootstrap(ssm=CIR(tau=tau, H=10), data=real_y),
+        "bootstrap_H1" : ssm.Bootstrap(ssm=CIR(tau=tau, H=1), data=real_y2),
+        "SMC_H10"      : ssm.GuidedPF(ssm=CIR(tau=tau, H=10), data=real_y),
+        "SMC_H1"       : ssm.GuidedPF(ssm=CIR(tau=tau, H=1), data=real_y2),
+        "SMCt_H10"     : ssm.GuidedPF(ssm=CIR_t(tau=tau, H=10), data=real_y),
+        "SMCt_H1"      : ssm.GuidedPF(ssm=CIR_t(tau=tau, H=1), data=real_y2),
+}
+
+    multiSMC(fk_list, nruns=500)
+
+    """
     fk_boot = ssm.Bootstrap(ssm=CIR(), data=real_y)
     fk_PF = ssm.GuidedPF(ssm=CIR(), data=real_y)
     fk_MPF = ssm.GuidedPF(ssm=CIR_mod(s=50), data=real_y)
@@ -118,3 +163,4 @@ if __name__ == "__main__":
     )
     evaluate.tail_prob(file)
     plt.show()
+    """

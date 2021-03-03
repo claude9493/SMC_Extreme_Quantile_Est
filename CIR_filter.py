@@ -20,7 +20,7 @@ from sklearn.metrics import mean_squared_error
 
 import configparser
 import evaluate
-import filtering
+from filtering import state_est
 from model.CIR import CIR, CIR_mod, CIR_plot
 
 # %% Settings parameters
@@ -32,6 +32,7 @@ my_seed = 3035802483
 MAX_INT_32 = np.iinfo(np.int32).max
 seeds = [np.random.randint(MAX_INT_32) for i in range(R)]
 
+tau = [0.25, 0.5, 1, 3, 5, 10]
 #%% Define model and generate real data
 # Run this cell to generate data or run the second cell below to load data generated and saved before.
 cir = CIR()
@@ -79,7 +80,7 @@ alg_PF = particles.SMC(
     verbose=False,
 )
 # Run the SMC_10K for one time.
-filtering.state_est(alg_PF, real_x, name="(CIR, SMC_10K)", xmin=-2, xmax=10)
+state_est(alg_PF, real_x, name="(CIR, SMC_10K)", xmin=-2, xmax=10)
 plt.savefig(f"./Records/CIR{name}/SMC_10K_filtering_once.png")
 plt.show()
 # Display the "residual" plot of the filtering result.
@@ -111,7 +112,7 @@ alg_PF = particles.SMC(
 )
 
 # Run the SMC_100 for one time.
-filtering.state_est(alg_PF, real_x, name="(CIR, SMC_100)", xmin=-2, xmax=10)
+state_est(alg_PF, real_x, name="(CIR, SMC_100)", xmin=-2, xmax=10)
 plt.savefig(f"./Records/CIR{name}/SMC_100_filtering_once.png")
 # Display the "residual" plot of the filtering result.
 evaluate.resi_plot(alg_PF, real_x, "SMC_100")
@@ -132,19 +133,32 @@ evaluate.result_evaluate(
 
 #%% SMC_100 with t proposal density R=10
 evaluate.result_evaluate(
-    f"./Records/CIR{name}/result_SMCt100_R500.npz",
+    f"./Records/CIR{name}/SMCt100_R500/history.npz",
     real_x,
-    "SMCt_100",
+    "SMCt100_R500",
 )
 # evaluate.tail_prob(f"./Records/CIR{name}/result_SMCt100_R500.npz")
+
+#%% Bootstrap filter
+evaluate.result_evaluate(
+    f"./Records/CIR{name}/Bootstrap100_R500/history.npz",
+    real_x,
+    "Bootstrap100_R500"
+)
+
 # %% tail probability 
-file_list = ["SMC100_R500", 
-             "ModifiedSMC100_R500", 
+file_list = ["Bootstrap100_R500",
+             "SMC100_R500", 
+            #  "ModifiedSMC100_R500", 
              "SMCt100_R500", 
              "SMC10K_R50"]
-file_list = [f"./Records/CIR{name}/result_"+f+".npz" for f in file_list]
-evaluate.tail_prob_multi(file_list, real_x)
-# %%
-# import importlib
-# importlib.reload(evaluate)
+# file_list = [f"./Records/CIR{name}/"+f+"/history.npz" for f in file_list]
+# evaluate.tail_prob_multi(file_list, real_x)
 
+for name in file_list:
+    evaluate.result_evaluate(f"./Records/CIR20210204-225727/{name}/history.npz", real_x, name)
+    plt.savefig(f"./Records/CIR20210204-225727/{name}/state_est.png")
+
+# %%
+import importlib
+importlib.reload(evaluate)
