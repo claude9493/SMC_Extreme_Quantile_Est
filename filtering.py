@@ -43,11 +43,12 @@ seeds = [np.random.randint(MAX_INT_32) for i in range(R)]
 ar1 = AR1()
 real_x, real_y = ar1.simulate(T)
 
-def state_est(alg, real_x, name = "", **kwargs):
+
+def state_est(alg, real_x, name="", **kwargs):
     """
     TODO:
     [v] Using kwargs to involve more plotting parameters, for providing a way to specify the xmax manually.
-    2. Display the bias bewteen real states and the mode estimates or weighted average estimates of them, as a series plot verus the time index.
+    2. Display the bias between real states and the mode estimates or weighted average estimates of them, as a series plot verus the time index.
 
     Keywords arguments:
         xmin, xmax: range of states' values studied, default value is -5, 5
